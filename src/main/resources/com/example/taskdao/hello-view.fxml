@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<?import javafx.scene.control.*?>
+<?import javafx.scene.layout.*?>
+
+<BorderPane xmlns="http://javafx.com/javafx/17.0.12" xmlns:fx="http://javafx.com/fxml/1" fx:controller="com.example.taskdao.Controller">
+    <top>
+        <HBox alignment="TOP_LEFT" spacing="10" style="-fx-padding: 10;">
+            <ChoiceBox fx:id="dataSourceChoiceBox" prefWidth="150" style="-fx-background-radius: 10;" />
+            <Button fx:id="selectDataSourceButton" style="-fx-background-radius: 10;" text="Выбрать источник данных" />
+        </HBox>
+    </top>
+    <center>
+        <TableView fx:id="productTable" />
+    </center>
+    <bottom>
+        <HBox spacing="10" style="-fx-padding: 10;">
+            <TextField fx:id="nameField" promptText="Название товара" style="-fx-background-radius: 10;" />
+            <TextField fx:id="quantityField" promptText="Количество" style="-fx-background-radius: 10;" />
+            <TextField fx:id="tagField" promptText="Тег" style="-fx-background-radius: 10;" />
+            <Button onAction="#handleAddProduct" style="-fx-background-radius: 10;" text="Добавить" />
+            <Button onAction="#handleUpdateProduct" style="-fx-background-radius: 10;" text="Изменить" />
+            <Button onAction="#handleDeleteProduct" style="-fx-background-radius: 10; -fx-background-color: #EE204D;" text="Удалить" />
+            <Button onAction="#handleShowNeededProducts" style="-fx-background-radius: 10;" text="Показать Нужные товары" />
+        </HBox>
+    </bottom>
+</BorderPane>
