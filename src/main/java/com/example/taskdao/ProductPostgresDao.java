@@ -7,9 +7,28 @@ import java.util.List;
 public class ProductPostgresDao implements ProductDao {
     private Connection connection;
 
+    /*public ProductPostgresDao(String url, String user, String password) {
+        try {
+            connection = DriverManager.getConnection(url, user, password);
+        } catch (SQLException e) {
+            e.printStackTrace();
+        }
+    }*/
     public ProductPostgresDao(String url, String user, String password) {
         try {
             connection = DriverManager.getConnection(url, user, password);
+            DatabaseMetaData dbm = connection.getMetaData();
+            ResultSet tables = dbm.getTables(null, null, "products", null);
+            if (!tables.next()) {
+                // Создаем таблицу, если ее нет
+                try (Statement stmt = connection.createStatement()) {
+                    stmt.execute("CREATE TABLE products (" +
+                            "id SERIAL PRIMARY KEY, " +
+                            "name VARCHAR(100) NOT NULL, " +
+                            "quantity INTEGER NOT NULL, " +
+                            "tag VARCHAR(50))");
+                }
+            }
         } catch (SQLException e) {
             e.printStackTrace();
         }
@@ -17,15 +36,25 @@ public class ProductPostgresDao implements ProductDao {
 
     @Override
     public void addProduct(Product product) {
-        String sql = "INSERT INTO products (name, quantity, tag) VALUES (?, ?, ?)";
+        String sql = "INSERT INTO products (id, name, quantity, tag) VALUES (?, ?, ?, ?)";
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            statement.setString(1, product.getName());
-            statement.setInt(2, product.getQuantity());
-            statement.setString(3, product.getTag());
+            statement.setInt(1, product.getId()); // Используем предоставленный ID
+            statement.setString(2, product.getName());
+            statement.setInt(3, product.getQuantity());
+            statement.setString(4, product.getTag());
             statement.executeUpdate();
+
+            // Обновляем последовательность, чтобы следующий автоинкремент был больше максимального ID
+            try (Statement stmt = connection.createStatement()) {
+                stmt.execute("SELECT setval('products_id_seq', (SELECT MAX(id) FROM products))");
+            }
         } catch (SQLException e) {
             e.printStackTrace();
         }
+    }
+
+    public Connection getConnection() {
+        return connection;
     }
 
     @Override

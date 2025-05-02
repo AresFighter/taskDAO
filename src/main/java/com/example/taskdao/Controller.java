@@ -11,6 +11,10 @@ import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
+
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.List;
 import java.util.ArrayList;
 
@@ -36,15 +40,24 @@ public class Controller {
     private ProductDao productDao;
 
     private ProductStatusManager statusManager;
+    private ProductDao memoryDao;
+    private ProductDao postgresDao;
+    private ProductDao txtDao;
 
     @FXML
     public void initialize() {
+        // Инициализация всех DAO
+        memoryDao = ProductDaoFactory.createMemoryDao();
+        postgresDao = ProductDaoFactory.createPostgresDao();
+        txtDao = ProductDaoFactory.createTxtDao();
+
         // Инициализация выбора источника данных
         dataSourceChoiceBox.getItems().addAll("Список в памяти", "PostgreSQL", "Текстовый файл");
         dataSourceChoiceBox.setValue("Список в памяти");
 
         // Инициализация DAO по умолчанию
         productDao = ProductDaoFactory.createProductDao(dataSourceChoiceBox.getValue());
+
 
         // Инициализация менеджера статусов
         statusManager = new ProductStatusManager(5, 10);
@@ -81,9 +94,25 @@ public class Controller {
         });
 
         // Обработка выбора источника данных
-        selectDataSourceButton.setOnAction(event -> {
+        /*selectDataSourceButton.setOnAction(event -> {
             String selectedDataSource = dataSourceChoiceBox.getValue();
             productDao = ProductDaoFactory.createProductDao(selectedDataSource);
+            refreshTable();
+        });*/
+        // Обработка выбора источника данных
+        selectDataSourceButton.setOnAction(event -> {
+            String selectedDataSource = dataSourceChoiceBox.getValue();
+            switch (selectedDataSource) {
+                case "Список в памяти":
+                    productDao = memoryDao;
+                    break;
+                case "PostgreSQL":
+                    productDao = postgresDao;
+                    break;
+                case "Текстовый файл":
+                    productDao = txtDao;
+                    break;
+            }
             refreshTable();
         });
     }
@@ -96,60 +125,77 @@ public class Controller {
             }
 
             int quantity = Integer.parseInt(quantityField.getText());
-
-            // Проверяем, является ли текущий год високосным, используя statusManager
             if (statusManager.isLeapYear()) {
-                quantity *= 2; // Увеличиваем количество в два раза
+                quantity *= 2;
             }
 
-            // Создаем новый продукт
-            int newId = productDao.getAllProducts().size() + 1;
-            Product product = new Product(newId, nameField.getText(), quantity, tagField.getText(), statusManager);
+            // Генерируем новый ID только один раз
+            int newId = generateNewId();
 
-            // Добавляем продукт через DAO
+            Product product = new Product(newId, nameField.getText(), quantity, tagField.getText(), statusManager);
             productDao.addProduct(product);
 
-            // Очищаем поля ввода
-            clearFields();
+            // Синхронизируем все источники данных из текущего активного
+            ProductDaoFactory.syncAllData(productDao);
 
-            // Обновляем таблицу
             refreshTable();
+            clearFields();
         } catch (Exception e) {
             showError("Ошибка", "Произошла ошибка при добавлении товара: " + e.getMessage());
+            e.printStackTrace();
         }
     }
 
+    private int generateNewId() {
+        // Находим максимальный ID среди всех источников
+        int maxMemoryId = memoryDao.getAllProducts().stream().mapToInt(Product::getId).max().orElse(0);
+        int maxPostgresId = postgresDao.getAllProducts().stream().mapToInt(Product::getId).max().orElse(0);
+        int maxTxtId = txtDao.getAllProducts().stream().mapToInt(Product::getId).max().orElse(0);
+
+        // Возвращаем максимальный ID + 1
+        return Math.max(Math.max(maxMemoryId, maxPostgresId), maxTxtId) + 1;
+    }
+
+    private int getNextIdFromPostgres() throws SQLException {
+        try (Statement stmt = ((ProductPostgresDao)productDao).getConnection().createStatement();
+             ResultSet rs = stmt.executeQuery("SELECT nextval('products_id_seq')")) {
+            if (rs.next()) {
+                return rs.getInt(1);
+            }
+        }
+        return 1;
+    }
+
+    private int getNextIdFromTxt() {
+        return productDao.getAllProducts().stream()
+                .mapToInt(Product::getId)
+                .max()
+                .orElse(0) + 1;
+    }
 
     @FXML
     public void handleUpdateProduct() {
         try {
-            // Проверка, что товар выбран
             Product selectedProduct = productTable.getSelectionModel().getSelectedItem();
             if (selectedProduct == null) {
                 showError("Ошибка", "Товар не выбран.");
                 return;
             }
 
-            // Проверка полей
             if (!validateFields()) {
                 return;
             }
 
-            // Получаем количество
             int quantity = Integer.parseInt(quantityField.getText());
-
-            // Обновляем данные продукта
             selectedProduct.setName(nameField.getText());
             selectedProduct.setQuantity(quantity);
             selectedProduct.setTag(tagField.getText());
 
-            // Обновляем продукт через DAO
             productDao.updateProduct(selectedProduct);
+            // Синхронизируем все источники данных из текущего активного
+            ProductDaoFactory.syncAllData(productDao);
 
-            // Очищаем поля ввода
             clearFields();
-
-            // Обновляем таблицу
             refreshTable();
         } catch (Exception e) {
             showError("Ошибка", "Произошла ошибка при изменении товара: " + e.getMessage());
@@ -159,20 +205,17 @@ public class Controller {
     @FXML
     public void handleDeleteProduct() {
         try {
-            // Проверка, что товар выбран
             Product selectedProduct = productTable.getSelectionModel().getSelectedItem();
             if (selectedProduct == null) {
                 showError("Ошибка", "Товар не выбран.");
                 return;
             }
 
-            // Удаляем продукт через DAO
             productDao.deleteProduct(selectedProduct.getId());
+            // Синхронизируем все источники данных из текущего активного
+            ProductDaoFactory.syncAllData(productDao);
 
-            // Очищаем поля ввода
             clearFields();
-
-            // Обновляем таблицу
             refreshTable();
         } catch (Exception e) {
             showError("Ошибка", "Произошла ошибка при удалении товара: " + e.getMessage());
@@ -224,9 +267,10 @@ public class Controller {
     }
 
     private void refreshTable() {
-        // Получаем все продукты из DAO и обновляем таблицу
+        // Получаем все продукты из текущего DAO
         ObservableList<Product> products = FXCollections.observableArrayList(productDao.getAllProducts());
         productTable.setItems(products);
+        productTable.refresh(); // Принудительное обновление таблицы
     }
 
     private void clearFields() {
